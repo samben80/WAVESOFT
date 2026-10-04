@@ -20,7 +20,19 @@ Contenu :
    - **`PhotoCompress.exe`** : version avec fenêtre (double-clic). Choisissez les dossiers, réglez la taille et le modèle de nom, puis cliquez sur **Lancer**. Le bouton **Aperçu des noms** montre le renommage sans rien écrire. Le bouton **Générer la liste Excel** crée un fichier `.xlsx` listant les photos du dossier de destination (nom avec extension, ex. `125-1E-D100-2B-3K-W BK.jpg`, puis nom sans extension, extension, taille et dimensions).
    - **`photocompress-cli.exe`** : version en ligne de commande, mêmes options que le script ci-dessous.
 
-Au premier lancement, Windows SmartScreen peut afficher « Windows a protégé votre ordinateur », car l'exécutable n'est pas signé : cliquez sur **Informations complémentaires** → **Exécuter quand même**.
+- [PhotoCompress-dossier.zip](https://github.com/samben80/WAVESOFT/releases/latest/download/PhotoCompress-dossier.zip) — version « dossier » à décompresser, **à utiliser si l'antivirus bloque `PhotoCompress.exe`** (lancer `PhotoCompress.exe` dans le dossier décompressé)
+
+### Si Windows bloque l'application
+
+L'exécutable n'est pas signé numériquement (certificat payant), d'où ces avertissements :
+
+| Message | Solution |
+|---|---|
+| « Windows a protégé votre ordinateur » (écran bleu SmartScreen) | **Informations complémentaires** → **Exécuter quand même** |
+| Rien ne se passe / message de sécurité au lancement | Clic droit sur le fichier → **Propriétés** → cocher **Débloquer** en bas → **OK** |
+| « Menace détectée », le fichier disparaît (Microsoft Defender) | Faux positif fréquent des programmes Python empaquetés : utiliser **PhotoCompress-dossier.zip**. Sinon : Sécurité Windows → Protection contre les virus → Historique de protection → l'élément → **Autoriser sur l'appareil** |
+| « Smart App Control a bloqué une application » (Windows 11) | Pas de contournement par application : il faut désactiver Smart App Control (Sécurité Windows → Contrôle des applications et du navigateur), ou utiliser la version Python ci-dessous |
+| Le navigateur refuse le téléchargement | Edge : « … » → **Conserver** ; Chrome : flèche des téléchargements → **Conserver le fichier dangereux** |
 
 Pour publier une nouvelle version : onglet **Actions** → **Build Windows exe** → **Run workflow**, en indiquant un tag (ex. `v1.1`). Pousser un tag `v*` fonctionne aussi. Les fichiers sont joints automatiquement à la *Release*.
 

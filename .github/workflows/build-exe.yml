@@ -32,14 +32,21 @@ jobs:
 
       - name: Build executables
         run: |
-          pyinstaller --noconfirm --onefile --windowed --name PhotoCompress photocompress_gui.py
-          pyinstaller --noconfirm --onefile --console --name photocompress-cli photocompress.py
+          $vf = "${{ github.workspace }}\version_info.txt"
+          pyinstaller --noconfirm --onefile --windowed --name PhotoCompress --version-file $vf photocompress_gui.py
+          pyinstaller --noconfirm --onefile --console --name photocompress-cli --version-file $vf photocompress.py
+          # Version « dossier » : pas d'auto-extraction dans %TEMP%, donc beaucoup moins de
+          # faux positifs antivirus que la version un seul fichier.
+          pyinstaller --noconfirm --onedir --windowed --name PhotoCompress --version-file $vf `
+            --distpath dist-dir --workpath build-dir --specpath build-dir photocompress_gui.py
 
       - name: Smoke test executables
         shell: pwsh
         run: |
           $gui = Start-Process dist\PhotoCompress.exe -ArgumentList "--self-test" -Wait -PassThru
           if ($gui.ExitCode -ne 0) { throw "PhotoCompress.exe a échoué (code $($gui.ExitCode))" }
+          $dir = Start-Process dist-dir\PhotoCompress\PhotoCompress.exe -ArgumentList "--self-test" -Wait -PassThru
+          if ($dir.ExitCode -ne 0) { throw "version dossier a échoué (code $($dir.ExitCode))" }
 
           python -c "import os; from PIL import Image; os.makedirs('smoke/in'); Image.linear_gradient('L').resize((1600, 1200)).convert('RGB').save('smoke/in/Photo Test.jpg', quality=95); Image.new('RGBA', (300, 200), (255, 0, 0, 128)).save('smoke/in/b.png')"
           dist\photocompress-cli.exe smoke\in smoke\out --pattern "photo_{n:03}" --slug --excel smoke\liste.xlsx
@@ -55,11 +62,15 @@ jobs:
           New-Item -ItemType Directory package | Out-Null
           Copy-Item dist\PhotoCompress.exe, dist\photocompress-cli.exe, README.md package\
           Compress-Archive -Path package\* -DestinationPath PhotoCompress-windows.zip
+          Copy-Item README.md dist-dir\PhotoCompress\
+          Compress-Archive -Path dist-dir\PhotoCompress -DestinationPath PhotoCompress-dossier.zip
 
       - uses: actions/upload-artifact@v4
         with:
           name: PhotoCompress-windows
-          path: package/*
+          path: |
+            package/*
+            PhotoCompress-dossier.zip
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
@@ -70,5 +81,6 @@ jobs:
           name: PhotoCompress ${{ inputs.release_tag || github.ref_name }}
           files: |
             PhotoCompress-windows.zip
+            PhotoCompress-dossier.zip
             dist/PhotoCompress.exe
             dist/photocompress-cli.exe
