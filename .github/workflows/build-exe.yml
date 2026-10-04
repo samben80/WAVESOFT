@@ -42,11 +42,12 @@ jobs:
           if ($gui.ExitCode -ne 0) { throw "PhotoCompress.exe a échoué (code $($gui.ExitCode))" }
 
           python -c "import os; from PIL import Image; os.makedirs('smoke/in'); Image.linear_gradient('L').resize((1600, 1200)).convert('RGB').save('smoke/in/Photo Test.jpg', quality=95); Image.new('RGBA', (300, 200), (255, 0, 0, 128)).save('smoke/in/b.png')"
-          dist\photocompress-cli.exe smoke\in smoke\out --pattern "photo_{n:03}" --slug
+          dist\photocompress-cli.exe smoke\in smoke\out --pattern "photo_{n:03}" --slug --excel smoke\liste.xlsx
           if ($LASTEXITCODE -ne 0) { throw "photocompress-cli.exe a échoué (code $LASTEXITCODE)" }
           $files = Get-ChildItem smoke\out
           $files | Format-Table Name, Length
           if ($files.Count -ne 2) { throw "2 fichiers attendus, $($files.Count) trouvés" }
+          if (-not (Test-Path smoke\liste.xlsx)) { throw "liste Excel non créée" }
 
       - name: Package
         shell: pwsh
