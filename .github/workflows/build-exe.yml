@@ -1,0 +1,62 @@
+name: Build Windows exe
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # nécessaire pour publier une release sur les tags v*
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pytest "pyinstaller>=6,<7"
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Build executables
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --name PhotoCompress photocompress_gui.py
+          pyinstaller --noconfirm --onefile --console --name photocompress-cli photocompress.py
+
+      - name: Smoke test executables
+        shell: pwsh
+        run: |
+          $gui = Start-Process dist\PhotoCompress.exe -ArgumentList "--self-test" -Wait -PassThru
+          if ($gui.ExitCode -ne 0) { throw "PhotoCompress.exe a échoué (code $($gui.ExitCode))" }
+
+          python -c "import os; from PIL import Image; os.makedirs('smoke/in'); Image.linear_gradient('L').resize((1600, 1200)).convert('RGB').save('smoke/in/Photo Test.jpg', quality=95); Image.new('RGBA', (300, 200), (255, 0, 0, 128)).save('smoke/in/b.png')"
+          dist\photocompress-cli.exe smoke\in smoke\out --pattern "photo_{n:03}" --slug
+          if ($LASTEXITCODE -ne 0) { throw "photocompress-cli.exe a échoué (code $LASTEXITCODE)" }
+          $files = Get-ChildItem smoke\out
+          $files | Format-Table Name, Length
+          if ($files.Count -ne 2) { throw "2 fichiers attendus, $($files.Count) trouvés" }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory package | Out-Null
+          Copy-Item dist\PhotoCompress.exe, dist\photocompress-cli.exe, README.md package\
+          Compress-Archive -Path package\* -DestinationPath PhotoCompress-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhotoCompress-windows
+          path: package/*
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: PhotoCompress-windows.zip

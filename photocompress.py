@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import argparse
 import io
+import multiprocessing
 import re
 import sys
 import unicodedata
+from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from datetime import date
@@ -240,7 +242,7 @@ def build_name(pattern: str, source: Path, index: int, use_slug: bool) -> str:
     try:
         name = pattern.format(name=source.stem, n=index, date=date.today().strftime("%Y%m%d"))
     except (KeyError, IndexError, ValueError) as exc:
-        raise SystemExit(
+        raise ValueError(
             f"Motif de nommage invalide « {pattern} » ({exc}). "
             "Variables disponibles : {name}, {n}, {date}."
         ) from exc
@@ -322,6 +324,53 @@ def run_job(job: Job, max_bytes: int, min_quality: int, requested_format: str,
         return JobResult(job.source, job.destination, original_size, 0, "", False, str(exc))
 
 
+def prepare_jobs(source: Path, destination: Path, pattern: str = "{name}", start: int = 1,
+                 use_slug: bool = False, requested_format: str = "auto", overwrite: bool = False,
+                 recursive: bool = False) -> tuple[Path, Path, list[Job]]:
+    """Vérifie les dossiers et calcule les noms de destination. Lève ValueError si invalide."""
+    source_dir = source.resolve()
+    dest_dir = destination.resolve()
+    if not source_dir.is_dir():
+        raise ValueError(f"Le dossier source « {source} » n'existe pas.")
+    if dest_dir == source_dir:
+        raise ValueError("Le dossier de destination doit être différent du dossier source.")
+    files = find_images(source_dir, recursive)
+    if recursive:  # ne pas retraiter une destination placée dans la source
+        files = [f for f in files if dest_dir not in f.parents]
+    jobs = plan_jobs(files, source_dir, dest_dir, pattern, start, use_slug, requested_format,
+                     overwrite)
+    return source_dir, dest_dir, jobs
+
+
+def run_jobs(jobs: list[Job], max_bytes: int, min_quality: int = 10,
+             requested_format: str = "auto", allow_fallback: bool = True,
+             workers: int | None = None) -> Iterator[JobResult]:
+    """Traite les images en parallèle et renvoie les résultats dans l'ordre des fichiers."""
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        futures = [
+            pool.submit(run_job, job, max_bytes, min_quality, requested_format, allow_fallback)
+            for job in jobs
+        ]
+        for future in futures:
+            yield future.result()
+
+
+def describe_result(r: JobResult, source_dir: Path, dest_dir: Path) -> str:
+    name = r.source.relative_to(source_dir)
+    if r.error:
+        return f"{'ERREUR':<9} {name} : {r.error}"
+    status = "OK" if r.fits else "TROP GROS"
+    return (f"{status:<9} {name} -> {r.destination.relative_to(dest_dir)}  "
+            f"{human_size(r.original_size)} -> {human_size(r.final_size)}  [{r.detail}]")
+
+
+def summarize(results: list[JobResult]) -> tuple[int, int, int]:
+    """Retourne (nb OK, nb au-dessus de la limite, nb erreurs)."""
+    errors = sum(1 for r in results if r.error)
+    too_big = sum(1 for r in results if not r.error and not r.fits)
+    return len(results) - errors - too_big, too_big, errors
+
+
 def human_size(n: int) -> str:
     return f"{n / 1000:.1f} Ko" if n < 1_000_000 else f"{n / 1_000_000:.2f} Mo"
 
@@ -376,26 +425,16 @@ Exemples :
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    source_dir = args.source.resolve()
-    dest_dir = args.destination.resolve()
-
-    if not source_dir.is_dir():
-        print(f"Erreur : le dossier source « {args.source} » n'existe pas.", file=sys.stderr)
+    try:
+        source_dir, dest_dir, jobs = prepare_jobs(
+            args.source, args.destination, args.pattern, args.start, args.slug,
+            args.output_format, args.overwrite, args.recursive)
+    except ValueError as exc:
+        print(f"Erreur : {exc}", file=sys.stderr)
         return 1
-    if dest_dir == source_dir:
-        print("Erreur : le dossier de destination doit être différent du dossier source.",
-              file=sys.stderr)
-        return 1
-
-    files = find_images(source_dir, args.recursive)
-    if args.recursive:  # ne pas retraiter une destination placée dans la source
-        files = [f for f in files if dest_dir not in f.parents]
-    if not files:
+    if not jobs:
         print("Aucune image trouvée (extensions : " + ", ".join(sorted(SUPPORTED_EXTENSIONS)) + ").")
         return 0
-
-    jobs = plan_jobs(files, source_dir, dest_dir, args.pattern, args.start, args.slug,
-                     args.output_format, args.overwrite)
 
     if args.dry_run:
         for job in jobs:
@@ -408,27 +447,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Traitement de {len(jobs)} image(s), limite {human_size(max_bytes)}...\n")
 
     results: list[JobResult] = []
-    with ProcessPoolExecutor(max_workers=args.workers) as pool:
-        futures = [
-            pool.submit(run_job, job, max_bytes, args.min_quality, args.output_format,
-                        not args.keep_format)
-            for job in jobs
-        ]
-        for future in futures:
-            r = future.result()
-            results.append(r)
-            name = r.source.relative_to(source_dir)
-            if r.error:
-                print(f"  {'ERREUR':<9} {name} : {r.error}")
-                continue
-            status = "OK" if r.fits else "TROP GROS"
-            print(f"  {status:<9} {name} -> {r.destination.relative_to(dest_dir)}  "
-                  f"{human_size(r.original_size)} -> {human_size(r.final_size)}  [{r.detail}]")
+    for r in run_jobs(jobs, max_bytes, args.min_quality, args.output_format,
+                      not args.keep_format, args.workers):
+        results.append(r)
+        print("  " + describe_result(r, source_dir, dest_dir))
 
-    errors = [r for r in results if r.error]
-    too_big = [r for r in results if not r.error and not r.fits]
-    ok = len(results) - len(errors) - len(too_big)
-    print(f"\nTerminé : {ok} OK, {len(too_big)} au-dessus de la limite, {len(errors)} erreur(s).")
+    ok, too_big, errors = summarize(results)
+    print(f"\nTerminé : {ok} OK, {too_big} au-dessus de la limite, {errors} erreur(s).")
     if too_big:
         print("Les fichiers « TROP GROS » ont été enregistrés au plus petit possible sans changer "
               "la résolution.\nPistes : baisser --min-quality, utiliser --format webp, ou accepter "
@@ -437,4 +462,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()  # nécessaire pour l'exécutable Windows (PyInstaller)
     sys.exit(main())

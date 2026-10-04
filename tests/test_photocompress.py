@@ -122,8 +122,7 @@ def test_unreachable_limit_reports_too_big(photos, tmp_path):
 
 
 def test_invalid_pattern(photos, tmp_path):
-    with pytest.raises(SystemExit):
-        run(photos, tmp_path / "out", "--pattern", "{inconnu}")
+    assert run(photos, tmp_path / "out", "--pattern", "{inconnu}") == 1
 
 
 def test_existing_file_with_other_extension_not_overwritten(photos, tmp_path):

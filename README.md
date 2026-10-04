@@ -4,7 +4,31 @@ Compresse des photos sous une taille maximale (**50 Ko par défaut**) **sans cha
 
 Formats acceptés : `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, `.tif`, `.tiff`, `.gif`.
 
-## Installation
+## Version Windows (.exe)
+
+Aucune installation de Python n'est nécessaire.
+
+1. Sur GitHub, ouvrez l'onglet **Actions** → workflow **Build Windows exe** → dernière exécution réussie.
+2. Téléchargez l'artefact **PhotoCompress-windows** (un .zip) en bas de la page.
+3. Décompressez-le :
+   - **`PhotoCompress.exe`** : version avec fenêtre (double-clic). Choisissez les dossiers, réglez la taille et le modèle de nom, puis cliquez sur **Lancer**. Le bouton **Aperçu des noms** montre le renommage sans rien écrire.
+   - **`photocompress-cli.exe`** : version en ligne de commande, mêmes options que le script ci-dessous.
+
+Au premier lancement, Windows SmartScreen peut afficher « Windows a protégé votre ordinateur », car l'exécutable n'est pas signé : cliquez sur **Informations complémentaires** → **Exécuter quand même**.
+
+Pour publier une version téléchargeable sans compte GitHub, poussez un tag `v*` (ex. `git tag v1.0 && git push origin v1.0`) : le .zip est alors joint à une *Release*.
+
+### Compiler soi-même (sous Windows)
+
+```bash
+pip install -r requirements.txt pyinstaller
+pyinstaller --onefile --windowed --name PhotoCompress photocompress_gui.py
+pyinstaller --onefile --console --name photocompress-cli photocompress.py
+```
+
+Les exécutables sont créés dans `dist/`.
+
+## Installation (script Python)
 
 ```bash
 pip install -r requirements.txt   # Pillow
