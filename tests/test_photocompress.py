@@ -141,3 +141,24 @@ def test_dotted_names(tmp_path):
     noisy_image((300, 200)).save(src / "photo.v2.jpg")
     run(src, tmp_path / "out")
     assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["photo.v1.jpg", "photo.v2.jpg"]
+
+
+def test_cut_name():
+    assert pc.cut_name("125-1E-D100-2B-3K-W BK_photo_1", "_photo") == "125-1E-D100-2B-3K-W BK"
+    assert pc.cut_name("REF_Photo_12", "_photo") == "REF"
+    assert pc.cut_name("sans suffixe", "_photo") == "sans suffixe"
+    assert pc.cut_name("_photo_1", "_photo") == "_photo_1"  # ne produit jamais un nom vide
+    assert pc.cut_name("REF_photo_1", "") == "REF_photo_1"
+
+
+def test_default_cut_photo_suffix(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    noisy_image((300, 200)).save(src / "125-1E-D100-2B-3K-W BK_photo_1.jpg")
+    noisy_image((300, 200)).save(src / "125-1E-D100-2B-3K-W BK_photo_2.jpg")
+    noisy_image((300, 200)).save(src / "AUTRE REF_photo_1.png")
+    run(src, tmp_path / "out")
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == [
+        "125-1E-D100-2B-3K-W BK.jpg", "125-1E-D100-2B-3K-W BK_1.jpg", "AUTRE REF.png"]
+    run(src, tmp_path / "out2", "--cut", "")
+    assert "AUTRE REF_photo_1.png" in {p.name for p in (tmp_path / "out2").iterdir()}

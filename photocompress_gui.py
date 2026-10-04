@@ -35,6 +35,7 @@ class App(tk.Tk):
         self.destination = tk.StringVar()
         self.max_size = tk.StringVar(value="50")
         self.pattern = tk.StringVar(value="{name}")
+        self.cut = tk.StringVar(value="_photo")
         self.start = tk.StringVar(value="1")
         self.slug = tk.BooleanVar(value=False)
         self.recursive = tk.BooleanVar(value=False)
@@ -47,6 +48,7 @@ class App(tk.Tk):
         self.pattern.trace_add("write", lambda *_: self._update_preview())
         self.start.trace_add("write", lambda *_: self._update_preview())
         self.slug.trace_add("write", lambda *_: self._update_preview())
+        self.cut.trace_add("write", lambda *_: self._update_preview())
         self._update_preview()
 
     # ------------------------------------------------------------------ UI --
@@ -92,14 +94,18 @@ class App(tk.Tk):
         ttk.Label(naming, text="Premier numéro :").grid(row=0, column=2, sticky="w", padx=(10, 0))
         ttk.Spinbox(naming, from_=0, to=999999, width=7, textvariable=self.start).grid(
             row=0, column=3, sticky="w", padx=4)
+        ttk.Label(naming, text="Supprimer à partir de :").grid(row=1, column=0, sticky="w",
+                                                               pady=(6, 0))
+        ttk.Entry(naming, textvariable=self.cut, width=20).grid(row=1, column=1, sticky="w",
+                                                                padx=4, pady=(6, 0))
         ttk.Label(naming, foreground="gray",
-                  text="{name} = nom d'origine   {n} = numéro ({n:03} → 001)   "
-                       "{date} = date du jour").grid(row=1, column=0, columnspan=4, sticky="w",
-                                                     pady=(4, 0))
+                  text="{name} = nom d'origine (sans la partie supprimée)   "
+                       "{n} = numéro ({n:03} → 001)   {date} = date du jour").grid(
+            row=2, column=0, columnspan=4, sticky="w", pady=(4, 0))
         self.preview = ttk.Label(naming, foreground="#1a5fb4")
-        self.preview.grid(row=2, column=0, columnspan=4, sticky="w", pady=(2, 0))
+        self.preview.grid(row=3, column=0, columnspan=4, sticky="w", pady=(2, 0))
         checks = ttk.Frame(naming)
-        checks.grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        checks.grid(row=4, column=0, columnspan=4, sticky="w", pady=(6, 0))
         ttk.Checkbutton(checks, text="Noms simplifiés (minuscules, sans accents ni espaces)",
                         variable=self.slug).pack(side="left", padx=(0, 12))
         ttk.Checkbutton(checks, text="Inclure les sous-dossiers",
@@ -143,8 +149,9 @@ class App(tk.Tk):
     def _update_preview(self) -> None:
         try:
             start = int(self.start.get() or 1)
-            name = pc.build_name(self.pattern.get(), Path("Exemple Été.jpg"), start, self.slug.get())
-            self.preview.configure(text=f"Exemple : « Exemple Été.jpg » → « {name}.jpg »",
+            example = Path("125-1E-D100-2B-3K-W BK_photo_1.jpg")
+            name = pc.build_name(self.pattern.get(), example, start, self.slug.get(), self.cut.get())
+            self.preview.configure(text=f"Exemple : « {example.name} » → « {name}.jpg »",
                                    foreground="#1a5fb4")
         except ValueError as exc:
             self.preview.configure(text=str(exc), foreground="#c01c28")
@@ -185,7 +192,8 @@ class App(tk.Tk):
         try:
             return pc.prepare_jobs(Path(self.source.get()), Path(self.destination.get()),
                                    self.pattern.get(), settings["start"], self.slug.get(),
-                                   settings["format"], self.overwrite.get(), self.recursive.get())
+                                   settings["format"], self.overwrite.get(), self.recursive.get(),
+                                   self.cut.get())
         except ValueError as exc:
             messagebox.showerror("Erreur", str(exc))
             return None

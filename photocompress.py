@@ -238,9 +238,18 @@ def slugify(text: str) -> str:
     return re.sub(r"-{2,}", "-", text) or "image"
 
 
-def build_name(pattern: str, source: Path, index: int, use_slug: bool) -> str:
+def cut_name(stem: str, cut: str) -> str:
+    """Supprime tout à partir de la dernière occurrence de `cut` (sans tenir compte de la casse).
+    Ex. cut_name("125-1E-D100-2B-3K-W BK_photo_1", "_photo") -> "125-1E-D100-2B-3K-W BK"."""
+    if not cut:
+        return stem
+    pos = stem.lower().rfind(cut.lower())
+    return stem[:pos].rstrip() if pos > 0 else stem
+
+
+def build_name(pattern: str, source: Path, index: int, use_slug: bool, cut: str = "") -> str:
     try:
-        name = pattern.format(name=source.stem, n=index, date=date.today().strftime("%Y%m%d"))
+        name = pattern.format(name=cut_name(source.stem, cut), n=index, date=date.today().strftime("%Y%m%d"))
     except (KeyError, IndexError, ValueError) as exc:
         raise ValueError(
             f"Motif de nommage invalide « {pattern} » ({exc}). "
@@ -286,6 +295,7 @@ def plan_jobs(
     use_slug: bool,
     requested_format: str,
     overwrite: bool,
+    cut: str = "",
 ) -> list[Job]:
     """Calcule le nom de destination de chaque fichier (extension provisoire, ajustée à l'écriture)."""
     taken: set[Path] = set()
@@ -298,7 +308,7 @@ def plan_jobs(
         else:
             ext = normalized_extension(source.suffix)
         subdir = source.parent.relative_to(source_dir)
-        target = dest_dir / subdir / (build_name(pattern, source, index, use_slug) + ext)
+        target = dest_dir / subdir / (build_name(pattern, source, index, use_slug, cut) + ext)
         jobs.append(Job(source, unique_path(target, taken, overwrite)))
     return jobs
 
@@ -326,7 +336,7 @@ def run_job(job: Job, max_bytes: int, min_quality: int, requested_format: str,
 
 def prepare_jobs(source: Path, destination: Path, pattern: str = "{name}", start: int = 1,
                  use_slug: bool = False, requested_format: str = "auto", overwrite: bool = False,
-                 recursive: bool = False) -> tuple[Path, Path, list[Job]]:
+                 recursive: bool = False, cut: str = "") -> tuple[Path, Path, list[Job]]:
     """Vérifie les dossiers et calcule les noms de destination. Lève ValueError si invalide."""
     source_dir = source.resolve()
     dest_dir = destination.resolve()
@@ -338,7 +348,7 @@ def prepare_jobs(source: Path, destination: Path, pattern: str = "{name}", start
     if recursive:  # ne pas retraiter une destination placée dans la source
         files = [f for f in files if dest_dir not in f.parents]
     jobs = plan_jobs(files, source_dir, dest_dir, pattern, start, use_slug, requested_format,
-                     overwrite)
+                     overwrite, cut)
     return source_dir, dest_dir, jobs
 
 
@@ -381,7 +391,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     "et les renomme dans un dossier de destination.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Variables du motif de nommage (--pattern) :
-  {name}   nom d'origine sans extension
+  {name}   nom d'origine sans extension (et sans la fin coupée par --cut)
   {n}      numéro (formatable : {n:03} -> 001, 002...)
   {date}   date du jour AAAAMMJJ
 
@@ -397,6 +407,10 @@ Exemples :
                         help="taille maximale par fichier en Ko (1 Ko = 1000 octets, défaut : 50)")
     parser.add_argument("--pattern", default="{name}",
                         help="motif de renommage, sans extension (défaut : {name})")
+    parser.add_argument("--cut", default="_photo",
+                        help="supprime du nom d'origine tout ce qui suit ce texte, lui compris "
+                             "(défaut : _photo, donc « REF BK_photo_1 » -> « REF BK » ; "
+                             "--cut \"\" pour désactiver)")
     parser.add_argument("--start", type=int, default=1, help="premier numéro pour {n} (défaut : 1)")
     parser.add_argument("--slug", action="store_true",
                         help="noms en minuscules, sans accents ni espaces (ex. « Été 2024 » -> ete-2024)")
@@ -428,7 +442,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         source_dir, dest_dir, jobs = prepare_jobs(
             args.source, args.destination, args.pattern, args.start, args.slug,
-            args.output_format, args.overwrite, args.recursive)
+            args.output_format, args.overwrite, args.recursive, args.cut)
     except ValueError as exc:
         print(f"Erreur : {exc}", file=sys.stderr)
         return 1

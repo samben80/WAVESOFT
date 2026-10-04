@@ -68,9 +68,11 @@ Le motif ne contient pas l'extension ; elle est ajoutée automatiquement.
 
 | Variable | Valeur                                         |
 |----------|------------------------------------------------|
-| `{name}` | nom d'origine sans extension                   |
+| `{name}` | nom d'origine sans extension (après `--cut`) |
 | `{n}`    | numéro (`{n:03}` → 001, 002…), départ `--start` |
 | `{date}` | date du jour `AAAAMMJJ`                        |
+
+**Suppression d'une fin de nom (`--cut`, champ « Supprimer à partir de » dans la fenêtre)** : par défaut, tout ce qui suit `_photo` (compris) est retiré du nom d'origine, sans tenir compte des majuscules. Ainsi `125-1E-D100-2B-3K-W BK_photo_1.jpg` devient `125-1E-D100-2B-3K-W BK.jpg`. Pour garder le nom complet : `--cut ""` (ou vider le champ).
 
 Les fichiers sont numérotés dans l'ordre alphabétique. Si un nom existe déjà, un suffixe `_1`, `_2`… est ajouté (sauf avec `--overwrite`).
 
