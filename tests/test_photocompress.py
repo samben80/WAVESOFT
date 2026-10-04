@@ -162,3 +162,23 @@ def test_default_cut_photo_suffix(tmp_path):
         "125-1E-D100-2B-3K-W BK.jpg", "125-1E-D100-2B-3K-W BK_1.jpg", "AUTRE REF.png"]
     run(src, tmp_path / "out2", "--cut", "")
     assert "AUTRE REF_photo_1.png" in {p.name for p in (tmp_path / "out2").iterdir()}
+
+
+def test_excel_list(photos, tmp_path):
+    from openpyxl import load_workbook
+
+    dest = tmp_path / "out"
+    xlsx = tmp_path / "liste.xlsx"
+    assert run(photos, dest, "--excel", str(xlsx)) == 0
+    rows = list(load_workbook(xlsx).active.iter_rows(values_only=True))
+    assert rows[0][:3] == ("Nom du fichier", "Nom sans extension", "Extension")
+    names = [r[0] for r in rows[1:]]
+    assert names == sorted((p.name for p in dest.iterdir()), key=str.lower)
+    assert "Photo Été.jpg" in names
+    row = next(r for r in rows[1:] if r[0] == "Photo Été.jpg")
+    assert row[1:3] == ("Photo Été", "jpg") and row[4] == "1600 x 1200"
+
+
+def test_excel_list_missing_folder(tmp_path):
+    with pytest.raises(ValueError):
+        pc.write_excel_list(tmp_path / "absent", tmp_path / "l.xlsx")

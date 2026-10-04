@@ -26,7 +26,7 @@ class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("PhotoCompress - compression et renommage de photos")
-        self.minsize(720, 520)
+        self.minsize(820, 540)
         self.events: queue.Queue = queue.Queue()
         self.worker: threading.Thread | None = None
         self.dest_dir: Path | None = None
@@ -123,6 +123,9 @@ class App(tk.Tk):
         self.open_button = ttk.Button(actions, text="Ouvrir le dossier de destination",
                                       command=self._open_dest, state="disabled")
         self.open_button.pack(side="left")
+        self.excel_button = ttk.Button(actions, text="Générer la liste Excel",
+                                       command=self._export_excel)
+        self.excel_button.pack(side="left", padx=6)
         self.progress = ttk.Progressbar(actions, mode="determinate")
         self.progress.pack(side="left", fill="x", expand=True, padx=(12, 0))
         row += 1
@@ -272,15 +275,49 @@ class App(tk.Tk):
         self.preview_button.configure(state="normal")
         self.open_button.configure(state="normal")
 
-    def _open_dest(self) -> None:
-        if not self.dest_dir or not self.dest_dir.exists():
+    def _export_excel(self) -> None:
+        if not self.destination.get():
+            messagebox.showerror("Dossier manquant", "Choisissez le dossier de destination.")
             return
+        folder = Path(self.destination.get())
+        if not folder.is_dir():
+            messagebox.showerror("Dossier introuvable",
+                                 f"Le dossier « {folder} » n'existe pas encore.\n"
+                                 "Lancez d'abord la compression.")
+            return
+        output = filedialog.asksaveasfilename(
+            title="Enregistrer la liste Excel", initialdir=str(folder),
+            initialfile="liste_photos.xlsx", defaultextension=".xlsx",
+            filetypes=[("Classeur Excel", "*.xlsx")])
+        if not output:
+            return
+        try:
+            count = pc.write_excel_list(folder, Path(output), self.recursive.get())
+        except PermissionError:
+            messagebox.showerror("Fichier verrouillé",
+                                 "Impossible d'écrire le fichier : il est peut-être ouvert dans "
+                                 "Excel. Fermez-le puis réessayez.")
+            return
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Erreur", str(exc))
+            return
+        self._write(f"Liste Excel créée ({count} fichier(s)) : {output}", "ok")
+        if messagebox.askyesno("Liste Excel créée",
+                               f"{count} fichier(s) listé(s).\n\nOuvrir le fichier maintenant ?"):
+            self._open_path(Path(output))
+
+    def _open_dest(self) -> None:
+        if self.dest_dir and self.dest_dir.exists():
+            self._open_path(self.dest_dir)
+
+    @staticmethod
+    def _open_path(path: Path) -> None:
         if sys.platform == "win32":
-            os.startfile(self.dest_dir)  # noqa: S606
+            os.startfile(path)  # noqa: S606
         elif sys.platform == "darwin":
-            subprocess.Popen(["open", str(self.dest_dir)])
+            subprocess.Popen(["open", str(path)])
         else:
-            subprocess.Popen(["xdg-open", str(self.dest_dir)])
+            subprocess.Popen(["xdg-open", str(path)])
 
 
 def main() -> None:

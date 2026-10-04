@@ -286,6 +286,56 @@ def find_images(source_dir: Path, recursive: bool) -> list[Path]:
     return sorted(files, key=lambda p: str(p.relative_to(source_dir)).lower())
 
 
+def write_excel_list(folder: Path, output: Path, recursive: bool = False) -> int:
+    """Crée un fichier Excel listant les images du dossier (nom avec extension en colonne A).
+    Retourne le nombre de fichiers listés."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    folder = folder.resolve()
+    if not folder.is_dir():
+        raise ValueError(f"Le dossier « {folder} » n'existe pas.")
+    files = find_images(folder, recursive)
+    with_subdir = any(f.parent != folder for f in files)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Photos"
+    headers = ["Nom du fichier", "Nom sans extension", "Extension", "Taille (Ko)", "Dimensions"]
+    if with_subdir:
+        headers.append("Sous-dossier")
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="1A5FB4")
+
+    for f in files:
+        try:
+            with Image.open(f) as img:
+                dimensions = f"{img.width} x {img.height}"
+        except Exception:  # noqa: BLE001 - fichier illisible : on le liste quand même
+            dimensions = ""
+        row = [f.name, f.stem, f.suffix.lower().lstrip("."),
+               round(f.stat().st_size / 1000, 1), dimensions]
+        if with_subdir:
+            rel = f.parent.relative_to(folder)
+            row.append("" if rel == Path(".") else str(rel))
+        ws.append(row)
+
+    for i, header in enumerate(headers, start=1):
+        values = [header] + [str(c.value or "") for c in ws[get_column_letter(i)][1:]]
+        ws.column_dimensions[get_column_letter(i)].width = min(max(map(len, values)) + 3, 80)
+    for cell in ws["D"][1:]:
+        cell.number_format = "0.0"
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(output)
+    return len(files)
+
+
 def plan_jobs(
     files: list[Path],
     source_dir: Path,
@@ -427,6 +477,9 @@ Exemples :
                         help="écraser les fichiers existants dans la destination")
     parser.add_argument("--workers", type=int, default=None,
                         help="nombre de traitements en parallèle (défaut : nombre de cœurs)")
+    parser.add_argument("--excel", type=Path, metavar="FICHIER.xlsx",
+                        help="après traitement, crée un fichier Excel listant les photos du "
+                             "dossier de destination (nom avec extension)")
     parser.add_argument("--dry-run", action="store_true",
                         help="affiche le renommage prévu sans rien écrire")
     args = parser.parse_args(argv)
@@ -472,6 +525,9 @@ def main(argv: list[str] | None = None) -> int:
         print("Les fichiers « TROP GROS » ont été enregistrés au plus petit possible sans changer "
               "la résolution.\nPistes : baisser --min-quality, utiliser --format webp, ou accepter "
               "une taille plus grande (--max-size).")
+    if args.excel:
+        count = write_excel_list(dest_dir, args.excel, args.recursive)
+        print(f"Liste Excel ({count} fichier(s)) : {args.excel.resolve()}")
     return 0 if not errors and not too_big else 2
 
 

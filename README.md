@@ -17,7 +17,7 @@ Téléchargement direct (dernière version) :
 (Toutes les versions : page [Releases](https://github.com/samben80/WAVESOFT/releases). Les builds de chaque commit sont aussi disponibles dans l'onglet **Actions**, artefact **PhotoCompress-windows**, connexion GitHub requise.)
 
 Contenu :
-   - **`PhotoCompress.exe`** : version avec fenêtre (double-clic). Choisissez les dossiers, réglez la taille et le modèle de nom, puis cliquez sur **Lancer**. Le bouton **Aperçu des noms** montre le renommage sans rien écrire.
+   - **`PhotoCompress.exe`** : version avec fenêtre (double-clic). Choisissez les dossiers, réglez la taille et le modèle de nom, puis cliquez sur **Lancer**. Le bouton **Aperçu des noms** montre le renommage sans rien écrire. Le bouton **Générer la liste Excel** crée un fichier `.xlsx` listant les photos du dossier de destination (nom avec extension, ex. `125-1E-D100-2B-3K-W BK.jpg`, puis nom sans extension, extension, taille et dimensions).
    - **`photocompress-cli.exe`** : version en ligne de commande, mêmes options que le script ci-dessous.
 
 Au premier lancement, Windows SmartScreen peut afficher « Windows a protégé votre ordinateur », car l'exécutable n'est pas signé : cliquez sur **Informations complémentaires** → **Exécuter quand même**.
@@ -37,7 +37,7 @@ Les exécutables sont créés dans `dist/`.
 ## Installation (script Python)
 
 ```bash
-pip install -r requirements.txt   # Pillow
+pip install -r requirements.txt   # Pillow, openpyxl
 ```
 
 ## Utilisation
@@ -87,6 +87,7 @@ Les fichiers sont numérotés dans l'ordre alphabétique. Si un nom existe déj�
 | `--min-quality 10` | qualité JPEG/WebP minimale acceptée (1 à 95) |
 | `-r`, `--recursive` | traite les sous-dossiers en conservant l'arborescence |
 | `--workers N` | nombre d'images traitées en parallèle (défaut : nombre de cœurs) |
+| `--excel liste.xlsx` | après traitement, crée un fichier Excel listant les photos du dossier de destination (nom avec extension, nom sans extension, extension, taille, dimensions) |
 | `--dry-run` | affiche le plan de renommage sans écrire |
 
 ## Fonctionnement
