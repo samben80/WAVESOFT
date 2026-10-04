@@ -8,15 +8,21 @@ Formats acceptés : `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, `.tif`, `.tiff`, `
 
 Aucune installation de Python n'est nécessaire.
 
-1. Sur GitHub, ouvrez l'onglet **Actions** → workflow **Build Windows exe** → dernière exécution réussie.
-2. Téléchargez l'artefact **PhotoCompress-windows** (un .zip) en bas de la page.
-3. Décompressez-le :
+Téléchargement direct (dernière version) :
+
+- **[PhotoCompress.exe](https://github.com/samben80/WAVESOFT/releases/latest/download/PhotoCompress.exe)** — version avec fenêtre
+- [photocompress-cli.exe](https://github.com/samben80/WAVESOFT/releases/latest/download/photocompress-cli.exe) — version ligne de commande
+- [PhotoCompress-windows.zip](https://github.com/samben80/WAVESOFT/releases/latest/download/PhotoCompress-windows.zip) — les deux + ce README
+
+(Toutes les versions : page [Releases](https://github.com/samben80/WAVESOFT/releases). Les builds de chaque commit sont aussi disponibles dans l'onglet **Actions**, artefact **PhotoCompress-windows**, connexion GitHub requise.)
+
+Contenu :
    - **`PhotoCompress.exe`** : version avec fenêtre (double-clic). Choisissez les dossiers, réglez la taille et le modèle de nom, puis cliquez sur **Lancer**. Le bouton **Aperçu des noms** montre le renommage sans rien écrire.
    - **`photocompress-cli.exe`** : version en ligne de commande, mêmes options que le script ci-dessous.
 
 Au premier lancement, Windows SmartScreen peut afficher « Windows a protégé votre ordinateur », car l'exécutable n'est pas signé : cliquez sur **Informations complémentaires** → **Exécuter quand même**.
 
-Pour publier une version téléchargeable sans compte GitHub, poussez un tag `v*` (ex. `git tag v1.0 && git push origin v1.0`) : le .zip est alors joint à une *Release*.
+Pour publier une nouvelle version, poussez un tag `v*` (ex. `git tag v1.1 && git push origin v1.1`) : les fichiers sont joints automatiquement à une *Release*.
 
 ### Compiler soi-même (sous Windows)
 
