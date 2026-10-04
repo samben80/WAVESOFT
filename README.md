@@ -22,7 +22,7 @@ Contenu :
 
 Au premier lancement, Windows SmartScreen peut afficher « Windows a protégé votre ordinateur », car l'exécutable n'est pas signé : cliquez sur **Informations complémentaires** → **Exécuter quand même**.
 
-Pour publier une nouvelle version, poussez un tag `v*` (ex. `git tag v1.1 && git push origin v1.1`) : les fichiers sont joints automatiquement à une *Release*.
+Pour publier une nouvelle version : onglet **Actions** → **Build Windows exe** → **Run workflow**, en indiquant un tag (ex. `v1.1`). Pousser un tag `v*` fonctionne aussi. Les fichiers sont joints automatiquement à la *Release*.
 
 ### Compiler soi-même (sous Windows)
 
