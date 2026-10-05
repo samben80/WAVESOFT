@@ -7,3 +7,6 @@ dist/
 *.spec
 build-dir/
 dist-dir/
+# Agent Wavesoft : paramètres de connexion et extractions de la base client
+.env
+sortie/
