@@ -51,6 +51,7 @@ prévus par Wavesoft.
 | `formats.py` | définitions de formats d'import (types d'enregistrements, colonnes, règles) |
 | `importfile.py` | lecture, contrôle et écriture des fichiers d'import Wavesoft |
 | `excel_io.py` | modèle Excel à remplir et génération du fichier d'import depuis ce modèle |
+| `integration.py` + `integration.json` | intégration directe en base depuis Excel : familles, articles, clients, fournisseurs, produits, pièces de vente et d'achat |
 | `automate.py` | tâches de l'Automate de transferts : script SQL à relire, lecture de l'état dans `WSAUTOMATE` |
 | `cli.py` | commandes `discover`, `summary`, `search`, `describe`, `formats`, `template`, `build`, `check-file`, `automate`, `automate-etat` |
 | `specs/` | où placer les définitions de formats (privées, hors dépôt) |
@@ -155,3 +156,33 @@ pour les autres imports, et `--profil` donne le profil d'I/E quand le format
 n'est pas fixe. Le script passe `@TRSISTCP = 'N'` car la valeur par défaut de la
 procédure (`'O'`) réserve la tâche à un automate en mode serveur TCP ; `--tcp`
 rétablit ce mode.
+
+## Intégration directe dans la base
+
+Pour écrire directement dans le dossier, sans passer par les fichiers d'import
+ni l'Automate. Ordre fixe : familles d'articles, articles, clients,
+fournisseurs, produits, pièces de vente, pièces d'achat.
+
+```
+python -m wavesoft_agent discover --out sortie/                           # catalogue du dossier
+python -m wavesoft_agent integration-verifier sortie/catalog.json         # tables cibles présentes ?
+python -m wavesoft_agent integration-modele sortie/catalog.json           # classeur à remplir
+python -m wavesoft_agent integrer sortie/catalog.json donnees.xlsx        # simulation, demande les natures
+python -m wavesoft_agent integrer sortie/catalog.json donnees.xlsx --nature-vente FACHISTO --nature-achat FACFOU --executer
+```
+
+- Les colonnes du classeur sont celles des tables du dossier (catalogue) ; les
+  références se saisissent par code (FAMILLE, CLIENT, ARTICLE…). Une famille
+  vide prend la famille `DEFAULT`.
+- Chaque identifiant vient de `ws_sp_GetIdTable` (FTC005) et la ligne de la
+  table paramétrable `<TABLE>_P` est créée avec lui.
+- Tout le classeur est contrôlé avant d'écrire, puis écrit dans une seule
+  transaction. Sans `--executer`, tout est exécuté (contraintes et triggers
+  compris) puis annulé. Avec `--executer`, il faut retaper le nom de la base.
+- Une fiche dont le code existe déjà est laissée telle quelle ; une pièce
+  existante ne reçoit jamais de lignes.
+- Les noms de tables de `integration.json` marqués `a_confirmer` viennent des
+  fiches et guides : `integration-verifier` les compare au catalogue réel.
+- Limite : une insertion directe ne déclenche pas les calculs de l'ERP. Pour
+  les pièces, totaux, TVA, échéances, stock et comptabilisation ne sont pas
+  recalculés. À valider sur une copie du dossier.

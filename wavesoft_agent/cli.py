@@ -12,6 +12,9 @@ Exemples ::
     python -m wavesoft_agent check-file FTC002 import.txt       # contrôle d'un fichier existant
     python -m wavesoft_agent automate FTC002 import.txt         # script SQL des tâches Automate, à relire
     python -m wavesoft_agent automate-etat --erreurs            # état des tâches dans WSAUTOMATE (lecture)
+    python -m wavesoft_agent integration-modele sortie/catalog.json   # classeur Excel d'intégration directe
+    python -m wavesoft_agent integrer sortie/catalog.json donnees.xlsx  # simulation (rien n'est gardé)
+    python -m wavesoft_agent integrer sortie/catalog.json donnees.xlsx --executer
 """
 
 from __future__ import annotations
@@ -26,12 +29,18 @@ from .catalog import Catalog
 from .export import KIND_LABELS, _object_md, to_excel, to_markdown
 
 
-def _connect(args):
-    from .connection import ConnectionSettings, connect
+def _settings(args):
+    from .connection import ConnectionSettings
 
-    return connect(ConnectionSettings.from_env(
+    return ConnectionSettings.from_env(
         env_file=args.env, server=args.server, database=args.database, user=args.user, driver=args.driver
-    ))
+    )
+
+
+def _connect(args, write: bool = False):
+    from .connection import connect
+
+    return connect(_settings(args), write)
 
 
 def cmd_discover(args) -> int:
@@ -200,6 +209,90 @@ def cmd_automate_etat(args) -> int:
     return 1 if any(r["TRSETAT"] == "E" for r in rows) else 0
 
 
+def cmd_integration_verifier(args) -> int:
+    from .integration import Config, verifier_config
+
+    config = Config.load(args.config)
+    issues = verifier_config(config, Catalog.load(args.catalog))
+    for e in config.etapes:
+        print(f"{e.nom:<15} {e.table}" + ("  (nom à confirmer)" if e.a_confirmer else ""))
+    for i in issues:
+        print(i)
+    errors = sum(i.niveau == "erreur" for i in issues)
+    print(f"{errors} erreur(s) : " + ("corriger integration.json (option --config)." if errors else "configuration conforme à la base."))
+    return 1 if errors else 0
+
+
+def cmd_integration_modele(args) -> int:
+    from .integration import Config, ecrire_modele
+
+    out = ecrire_modele(Config.load(args.config), Catalog.load(args.catalog), args.out)
+    print(f"Classeur d'intégration écrit : {out.resolve()}")
+    return 0
+
+
+def _choisir_nature(config, conn, quoi: str) -> str:
+    from .integration import natures_disponibles
+
+    natures = natures_disponibles(config, conn)
+    print(f"Natures de pièces disponibles pour les pièces {quoi}s :")
+    for code, lib in natures:
+        print(f"  {code:<12} {lib}")
+    codes = {c.upper() for c, _ in natures}
+    while True:
+        choix = input(f"Nature sous laquelle intégrer les pièces {quoi}s : ").strip().upper()
+        if choix in codes:
+            return choix
+        print("Nature inconnue.")
+
+
+def cmd_integrer(args) -> int:
+    from .integration import Config, integrer, preparer
+
+    config = Config.load(args.config)
+    catalog = Catalog.load(args.catalog)
+    natures = {"vente": (args.nature_vente or "").upper(), "achat": (args.nature_achat or "").upper()}
+    plan = preparer(config, catalog, args.classeur, natures)
+    besoin = [e.nature for e, _, lignes in plan.etapes if e.nature and lignes and not natures.get(e.nature)]
+    with _connect(args, write=True) as conn:
+        if catalog.get(config.natures.get("table", "")) is not None:
+            from .integration import natures_disponibles
+
+            connues = {c.upper() for c, _ in natures_disponibles(config, conn)}
+            for quoi, code in natures.items():
+                if code and code not in connues:
+                    raise ValueError(f"nature {code} inconnue dans ce dossier (pièces {quoi}s)")
+        if besoin:
+            if not sys.stdin.isatty():
+                raise ValueError("préciser --nature-vente / --nature-achat")
+            for quoi in dict.fromkeys(besoin):
+                natures[quoi] = _choisir_nature(config, conn, quoi)
+            plan = preparer(config, catalog, args.classeur, natures)
+        for a in plan.anomalies:
+            print(a)
+        if plan.erreurs:
+            print(f"{len(plan.erreurs)} erreur(s) dans le classeur : rien n'a été écrit.")
+            return 1
+        if args.executer and not args.oui:
+            if not sys.stdin.isatty():
+                raise ValueError("--executer sans terminal : ajouter --oui après avoir validé la simulation")
+            base = _settings(args).database
+            if input(f"Écrire définitivement dans la base {base} ? Retaper son nom pour confirmer : ").strip() != base:
+                print("Abandon : rien n'a été écrit.")
+                return 1
+        bilan = integrer(plan, config, catalog, conn, executer=args.executer)
+    for a in bilan.anomalies[len(plan.anomalies):]:
+        print(a)
+    for e, _, _ in plan.etapes:
+        if e.nom in bilan.crees or e.nom in bilan.existants:
+            print(f"{e.libelle:<28} {bilan.crees.get(e.nom, 0):>6} créé(s), {bilan.existants.get(e.nom, 0)} déjà présent(s)")
+    if any(a.niveau == "erreur" for a in bilan.anomalies):
+        print("Erreurs pendant l'écriture : tout a été annulé.")
+        return 1
+    print("Écrit dans la base." if bilan.execute else "Simulation : tout a été exécuté puis annulé, rien n'est gardé.")
+    return 0
+
+
 def _sep(value):
     return {"tab": "\t", "tabulation": "\t", "pv": ";", ";": ";"}.get(value, value) if value else None
 
@@ -279,6 +372,29 @@ def build_parser() -> argparse.ArgumentParser:
     ae.add_argument("--erreurs", action="store_true", help="seulement les tâches en erreur")
     connection_args(ae)
     ae.set_defaults(func=cmd_automate_etat)
+
+    cfg_help = "configuration des tables cibles (défaut : wavesoft_agent/integration.json)"
+    iv = sub.add_parser("integration-verifier", help="vérifier les tables cibles de l'intégration contre le catalogue")
+    iv.add_argument("catalog")
+    iv.add_argument("--config", help=cfg_help)
+    iv.set_defaults(func=cmd_integration_verifier)
+
+    im = sub.add_parser("integration-modele", help="classeur Excel d'intégration directe, tiré des colonnes réelles")
+    im.add_argument("catalog")
+    im.add_argument("--out", default="modele_integration.xlsx")
+    im.add_argument("--config", help=cfg_help)
+    im.set_defaults(func=cmd_integration_modele)
+
+    ig = sub.add_parser("integrer", help="intégrer le classeur directement dans la base (simulation par défaut)")
+    ig.add_argument("catalog")
+    ig.add_argument("classeur")
+    ig.add_argument("--nature-vente", help="nature des pièces de vente (demandée sinon)")
+    ig.add_argument("--nature-achat", help="nature des pièces d'achat (demandée sinon)")
+    ig.add_argument("--executer", action="store_true", help="garder les écritures (sinon tout est annulé)")
+    ig.add_argument("--oui", action="store_true", help="ne pas demander de confirmation avec --executer")
+    ig.add_argument("--config", help=cfg_help)
+    connection_args(ig)
+    ig.set_defaults(func=cmd_integrer)
     return p
 
 

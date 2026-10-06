@@ -49,15 +49,16 @@ class ConnectionSettings:
             raise ValueError("Renseigner WAVESOFT_SERVER et WAVESOFT_DATABASE (ou --server / --database).")
         return cls(**values)
 
-    def connection_string(self) -> str:
+    def connection_string(self, write: bool = False) -> str:
         parts = [
             f"DRIVER={{{self.driver}}}",
             f"SERVER={self.server}",
             f"DATABASE={self.database}",
-            # L'agent ne fait que lire : on le dit au serveur (utile sur un groupe AlwaysOn).
-            "ApplicationIntent=ReadOnly",
-            "APP=wavesoft-agent",
         ]
+        if not write:
+            # Découverte et contrôles ne font que lire : on le dit au serveur (utile sur un groupe AlwaysOn).
+            parts.append("ApplicationIntent=ReadOnly")
+        parts.append("APP=wavesoft-agent")
         if self.user:
             parts += [f"UID={self.user}", f"PWD={{{(self.password or '').replace('}', '}}')}}}"]
         else:
@@ -67,13 +68,15 @@ class ConnectionSettings:
         return ";".join(parts) + ";"
 
 
-def connect(settings: ConnectionSettings):
+def connect(settings: ConnectionSettings, write: bool = False):
+    """Connexion en lecture seule, sauf ``write=True`` réservé à l'intégration
+    directe (transaction explicite, validée ou annulée par l'appelant)."""
     try:
         import pyodbc
     except ImportError as exc:  # pragma: no cover - dépend du poste
         raise RuntimeError("Installer pyodbc : pip install pyodbc (et le pilote ODBC SQL Server).") from exc
-    conn = pyodbc.connect(settings.connection_string(), timeout=settings.timeout, readonly=True)
-    return conn
+    return pyodbc.connect(settings.connection_string(write), timeout=settings.timeout,
+                          readonly=not write, autocommit=False)
 
 
 def _read_env_file(path: str | Path):

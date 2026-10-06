@@ -1,0 +1,120 @@
+{
+  "_note": "Tables et colonnes cibles de l'intégration directe. Les noms marqués a_confirmer viennent des fiches et guides, pas de la base : la commande integration-verifier les compare au catalogue du dossier.",
+  "natures": {
+    "table": "PIECENATURES",
+    "code": "PINCODE",
+    "libelle": "PININTITULE",
+    "a_confirmer": true
+  },
+  "etapes": [
+    {
+      "nom": "familles",
+      "feuille": "Familles",
+      "libelle": "Familles d'articles",
+      "table": "FAMILLES",
+      "id": "FAMID",
+      "code": "FAMCODE",
+      "table_p": "FAMILLES_P",
+      "a_confirmer": true
+    },
+    {
+      "nom": "articles",
+      "feuille": "Articles",
+      "libelle": "Articles",
+      "table": "ARTICLES",
+      "id": "ARTID",
+      "code": "ARTCODE",
+      "table_p": "ARTICLES_P",
+      "references": [
+        {"colonne": "FAMID", "feuille_colonne": "FAMILLE", "etape": "familles", "defaut": "DEFAULT"}
+      ]
+    },
+    {
+      "nom": "clients",
+      "feuille": "Clients",
+      "libelle": "Clients",
+      "table": "TIERS",
+      "id": "TIRID",
+      "code": "TIRCODE",
+      "table_p": "TIERS_P",
+      "constantes": {"TIRTYPE": "C"},
+      "a_confirmer": true
+    },
+    {
+      "nom": "fournisseurs",
+      "feuille": "Fournisseurs",
+      "libelle": "Fournisseurs",
+      "table": "TIERS",
+      "id": "TIRID",
+      "code": "TIRCODE",
+      "table_p": "TIERS_P",
+      "constantes": {"TIRTYPE": "F"},
+      "a_confirmer": true
+    },
+    {
+      "nom": "produits",
+      "feuille": "Produits",
+      "libelle": "Produits",
+      "table": "PRODUITS",
+      "id": "PROID",
+      "code": "PROCODE",
+      "table_p": "PRODUITS_P",
+      "references": [
+        {"colonne": "ARTID", "feuille_colonne": "ARTICLE", "etape": "articles"}
+      ],
+      "a_confirmer": true
+    },
+    {
+      "nom": "ventes",
+      "feuille": "Ventes",
+      "libelle": "Pièces de vente (entêtes)",
+      "table": "PIECEVENTES",
+      "id": "PCVID",
+      "code": "PCVNUMEXT",
+      "nature": "vente",
+      "nature_colonne": "PINCODE",
+      "references": [
+        {"colonne": "TIRID", "feuille_colonne": "CLIENT", "etape": "clients"}
+      ],
+      "a_confirmer": true
+    },
+    {
+      "nom": "ventes_lignes",
+      "feuille": "Ventes lignes",
+      "libelle": "Pièces de vente (lignes)",
+      "table": "PIECEVENTELIGNES",
+      "id": "PLVID",
+      "parent": {"etape": "ventes", "colonne": "PCVID"},
+      "references": [
+        {"colonne": "ARTID", "feuille_colonne": "ARTICLE", "etape": "articles"}
+      ],
+      "a_confirmer": true
+    },
+    {
+      "nom": "achats",
+      "feuille": "Achats",
+      "libelle": "Pièces d'achat (entêtes)",
+      "table": "PIECEACHATS",
+      "id": "PCAID",
+      "code": "PCANUMEXT",
+      "nature": "achat",
+      "nature_colonne": "PINCODE",
+      "references": [
+        {"colonne": "TIRID", "feuille_colonne": "FOURNISSEUR", "etape": "fournisseurs"}
+      ],
+      "a_confirmer": true
+    },
+    {
+      "nom": "achats_lignes",
+      "feuille": "Achats lignes",
+      "libelle": "Pièces d'achat (lignes)",
+      "table": "PIECEACHATLIGNES",
+      "id": "PLAID",
+      "parent": {"etape": "achats", "colonne": "PCAID"},
+      "references": [
+        {"colonne": "ARTID", "feuille_colonne": "ARTICLE", "etape": "articles"}
+      ],
+      "a_confirmer": true
+    }
+  ]
+}
