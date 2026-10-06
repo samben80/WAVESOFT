@@ -39,6 +39,7 @@ ORDER BY s.name, o.name
 """,
     "columns": """-- q:columns
 SELECT c.object_id, c.column_id, c.name, TYPE_NAME(c.user_type_id) AS type_name,
+       TYPE_NAME(c.system_type_id) AS base_type_name,
        c.max_length, c.precision, c.scale, c.is_nullable, c.is_identity, c.is_computed,
        dc.definition AS default_definition, cc.definition AS computed_definition,
        c.collation_name, CAST(ep.value AS nvarchar(4000)) AS description
@@ -187,6 +188,7 @@ def discover(conn: Any, warnings: list[str] | None = None) -> Catalog:
                     name=r["name"],
                     position=int(r["column_id"]),
                     data_type=r["type_name"],
+                    base_type=r.get("base_type_name") if r.get("base_type_name") != r["type_name"] else None,
                     max_length=_int(r["max_length"]),
                     precision=_int(r["precision"]),
                     scale=_int(r["scale"]),

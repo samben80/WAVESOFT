@@ -19,19 +19,22 @@ prévus par Wavesoft.
                       │ catalogue (tables, vues, procédures, fonctions,
                       │ triggers, clés, FK, contraintes, dépendances)
             ┌─────────▼──────────┐
- Fiches ────▶ 2. Référentiel     │  specs/  → une définition par flux
- techniques │   d'intégration    │  (articles, tiers, pièces…) : format de
- éditeur    │   (à venir)        │  fichier, colonnes, règles, ordre de chargement
-            └─────────┬──────────┘
-                      │ contrôle croisé fiche ↔ base réelle
-            ┌─────────▼──────────┐
- Données ───▶ 3. Mapping et      │  colonnes client → colonnes Wavesoft,
- client     │   contrôles        │  types, longueurs, obligatoires, clés
- (Excel…)   │   (à venir)        │  étrangères, doublons, codes inexistants
+ Fiches ────▶ 2. Définitions     │  formats.py + définitions JSON privées
+ techniques │   de formats       │  (FTC002 ventes, FTC007 achats, FTC011 divers,
+ éditeur    │   (fait)           │   FTC022 EDI, FTC004 imports spéciaux…)
             └─────────┬──────────┘
             ┌─────────▼──────────┐
-            │ 4. Génération      │  fichiers d'intégration au format éditeur
-            │   (à venir)        │  + rapport d'anomalies avant import
+ Données ───▶ 3. Modèle Excel    │  excel_io.py : un onglet par type de ligne
+ client     │   et contrôles     │  (E, AF, LA…), contrôle colonne par colonne
+            │   (fait)           │  avec renvoi à la feuille et la ligne Excel
+            └─────────┬──────────┘
+            ┌─────────▼──────────┐
+            │ 4. Fichier         │  importfile.py : fichier .txt au format éditeur
+            │   d'import (fait)  │  (séparateur ; ou tab, ANSI), prêt pour la
+            └─────────┬──────────┘  Gestion ou l'Automate de transfert
+            ┌─────────▼──────────┐
+            │ 5. Contrôles base  │  codes clients, articles, natures, dépôts…
+            │   (à venir)        │  vérifiés contre la base réelle
             └────────────────────┘
 ```
 
@@ -41,8 +44,11 @@ prévus par Wavesoft.
 | `discovery.py` | requêtes sur les vues système `sys.*` pour reconnaître tous les objets de la base |
 | `catalog.py` | modèle du catalogue, sérialisé en JSON pour travailler hors connexion |
 | `export.py` | dictionnaire de données Markdown et classeur Excel (onglets Objets, Colonnes, Paramètres) |
-| `cli.py` | commandes `discover`, `summary`, `search`, `describe` |
-| `specs/` | emplacement des fiches techniques éditeur et de leur version structurée |
+| `formats.py` | définitions de formats d'import (types d'enregistrements, colonnes, règles) |
+| `importfile.py` | lecture, contrôle et écriture des fichiers d'import Wavesoft |
+| `excel_io.py` | modèle Excel à remplir et génération du fichier d'import depuis ce modèle |
+| `cli.py` | commandes `discover`, `summary`, `search`, `describe`, `formats`, `template`, `build`, `check-file` |
+| `specs/` | où placer les définitions de formats (privées, hors dépôt) |
 
 Ce que la découverte relève pour chaque objet :
 
@@ -104,3 +110,22 @@ python -m wavesoft_agent describe sortie/catalog.json dbo.NOM_TABLE --code
 
 Le dossier `sortie/` contient des informations sur la base du client : il est
 ignoré par git et ne doit pas être publié.
+
+## Préparer un fichier d'intégration
+
+Les définitions de formats sont privées (voir `specs/README.md`) : les placer
+dans `wavesoft_agent/specs/formats/` ou indiquer leur dossier par
+`WAVESOFT_SPECS`.
+
+```
+python -m wavesoft_agent formats                                  # formats disponibles
+python -m wavesoft_agent template FTC002 --records E,AF,AL,LA,NO  # modèle Excel à remplir
+python -m wavesoft_agent build FTC002 modele_FTC002.xlsx --out import_ventes.txt
+python -m wavesoft_agent check-file FTC002 fichier_existant.txt   # contrôle d'un fichier reçu
+```
+
+Dans le modèle, `PIECE` regroupe les lignes d'une même pièce et `ORDRE` ordonne
+les lignes (un `LD` ou `AN` reprend l'`ORDRE` de la ligne article qu'il
+complète). `build` n'écrit aucun fichier tant qu'il reste une erreur ; chaque
+anomalie indique la feuille et la ligne Excel à corriger. Le fichier produit
+s'importe par la Gestion (Traitement des pièces) ou par l'Automate de transfert.

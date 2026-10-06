@@ -6,11 +6,16 @@ Exemples ::
     python -m wavesoft_agent summary sortie/catalog.json       # comptes par type et domaines
     python -m wavesoft_agent search sortie/catalog.json ARTICLE  # cherche un nom d'objet ou de colonne
     python -m wavesoft_agent describe sortie/catalog.json dbo.ARTICLES
+    python -m wavesoft_agent formats                            # formats d'import connus
+    python -m wavesoft_agent template FTC002                    # modèle Excel à remplir
+    python -m wavesoft_agent build FTC002 modele_FTC002.xlsx    # fichier d'import contrôlé
+    python -m wavesoft_agent check-file FTC002 import.txt       # contrôle d'un fichier existant
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -47,6 +52,8 @@ def cmd_summary(args) -> int:
     print(f"Base {catalog.database} sur {catalog.server}, extraite le {catalog.extracted_at}")
     for kind, n in catalog.counts().items():
         print(f"  {KIND_LABELS.get(kind, kind):<22}{n:>6}")
+    specific = [o for o in catalog.objects if o.specific]
+    print(f"  {'dont spécifiques EXT_':<22}{len(specific):>6}")
     print("\nDomaines (préfixes de tables et vues) :")
     for prefix, names in list(group_by_prefix(catalog).items())[: args.top]:
         print(f"  {prefix:<22}{len(names):>6}")
@@ -88,6 +95,73 @@ def cmd_describe(args) -> int:
     return 0
 
 
+def _specs(args):
+    from .formats import load_specs
+
+    folder = Path(args.specs or os.environ.get("WAVESOFT_SPECS") or Path(__file__).parent / "specs" / "formats")
+    specs = load_specs(folder) if folder.is_dir() else {}
+    if not specs:
+        raise ValueError(f"Aucune définition de format dans {folder} (option --specs ou WAVESOFT_SPECS).")
+    return specs
+
+
+def _spec(args):
+    specs = _specs(args)
+    code = args.format.upper()
+    if code not in specs:
+        raise ValueError(f"Format {args.format} inconnu. Disponibles : {', '.join(specs)}")
+    return specs[code]
+
+
+def _report(issues) -> int:
+    for i in issues:
+        print(i)
+    errors = sum(i.level == "erreur" for i in issues)
+    warnings = len(issues) - errors
+    print(f"{errors} erreur(s), {warnings} avertissement(s).")
+    return 1 if errors else 0
+
+
+def cmd_formats(args) -> int:
+    for code, spec in _specs(args).items():
+        recs = ", ".join(c for c in spec.enregistrements if c != "*")
+        print(f"{code:<24} {spec.titre}" + (f"  [{recs}]" if recs else ""))
+    return 0
+
+
+def cmd_check_file(args) -> int:
+    from .importfile import check_file
+
+    return _report(check_file(args.fichier, _spec(args), _sep(args.sep)))
+
+
+def cmd_template(args) -> int:
+    from .excel_io import write_template
+
+    spec = _spec(args)
+    out = args.out or f"modele_{spec.code}.xlsx"
+    records = [r.strip().upper() for r in args.records.split(",")] if args.records else None
+    print(f"Modèle écrit : {write_template(spec, out, records)}")
+    return 0
+
+
+def cmd_build(args) -> int:
+    from .excel_io import build_file
+
+    spec = _spec(args)
+    out = args.out or Path(args.classeur).with_suffix(".txt").name
+    code = _report(build_file(spec, args.classeur, out, _sep(args.sep) or ";"))
+    if code == 0:
+        print(f"Fichier d'import écrit : {Path(out).resolve()} ({spec.encodage})")
+    else:
+        print("Aucun fichier écrit : corriger le classeur puis relancer.")
+    return code
+
+
+def _sep(value):
+    return {"tab": "\t", "tabulation": "\t", "pv": ";", ";": ";"}.get(value, value) if value else None
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="wavesoft_agent", description="Agent intégrateur Wavesoft")
     sub = p.add_subparsers(dest="command", required=True)
@@ -117,6 +191,32 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("name")
     x.add_argument("--code", action="store_true", help="afficher le code SQL")
     x.set_defaults(func=cmd_describe)
+    specs_help = "dossier des définitions de formats (défaut : WAVESOFT_SPECS ou wavesoft_agent/specs/formats)"
+    fm = sub.add_parser("formats", help="lister les formats d'import disponibles")
+    fm.add_argument("--specs", help=specs_help)
+    fm.set_defaults(func=cmd_formats)
+
+    cf = sub.add_parser("check-file", help="contrôler un fichier d'import existant")
+    cf.add_argument("format", help="code du format, ex. FTC002")
+    cf.add_argument("fichier")
+    cf.add_argument("--sep", help="séparateur : ; ou tab (détecté sinon)")
+    cf.add_argument("--specs", help=specs_help)
+    cf.set_defaults(func=cmd_check_file)
+
+    tp = sub.add_parser("template", help="créer le modèle Excel à remplir pour un format")
+    tp.add_argument("format")
+    tp.add_argument("--out")
+    tp.add_argument("--records", help="enregistrements à inclure, ex. E,AF,AL,LA")
+    tp.add_argument("--specs", help=specs_help)
+    tp.set_defaults(func=cmd_template)
+
+    bd = sub.add_parser("build", help="générer le fichier d'import à partir du modèle Excel rempli")
+    bd.add_argument("format")
+    bd.add_argument("classeur")
+    bd.add_argument("--out")
+    bd.add_argument("--sep", help="séparateur : ; (défaut) ou tab")
+    bd.add_argument("--specs", help=specs_help)
+    bd.set_defaults(func=cmd_build)
     return p
 
 
@@ -124,6 +224,6 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (ValueError, RuntimeError) as exc:
+    except (ValueError, RuntimeError, OSError, KeyError) as exc:
         print(f"Erreur : {exc}", file=sys.stderr)
         return 2

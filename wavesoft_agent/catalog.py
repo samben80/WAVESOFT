@@ -34,6 +34,7 @@ class Column:
     name: str
     position: int
     data_type: str
+    base_type: str | None = None  # type système sous un type utilisateur Wavesoft (ID, BOOL, MNTCPT…)
     max_length: int | None = None
     precision: int | None = None
     scale: int | None = None
@@ -47,7 +48,11 @@ class Column:
 
     @property
     def sql_type(self) -> str:
-        """Type tel qu'on l'écrirait dans un CREATE TABLE (ex. ``nvarchar(50)``)."""
+        """Type tel qu'on l'écrirait dans un CREATE TABLE (ex. ``nvarchar(50)``).
+
+        Pour un type utilisateur, renvoie ``BOOL (char(1))``."""
+        if self.base_type:
+            return f"{self.data_type} ({Column(self.name, 0, self.base_type, None, self.max_length, self.precision, self.scale).sql_type})"
         t = self.data_type.lower()
         if t in ("varchar", "char", "varbinary", "binary"):
             return f"{t}({'max' if self.max_length == -1 else self.max_length})"
@@ -92,6 +97,7 @@ class Parameter:
     name: str
     position: int
     data_type: str
+    base_type: str | None = None  # type système sous un type utilisateur Wavesoft (ID, BOOL, MNTCPT…)
     max_length: int | None = None
     precision: int | None = None
     scale: int | None = None
@@ -125,6 +131,11 @@ class DbObject:
     @property
     def full_name(self) -> str:
         return f"{self.schema}.{self.name}"
+
+    @property
+    def specific(self) -> bool:
+        """Objet ajouté hors standard Wavesoft (convention FTC010 : préfixes EXT_ / V_EXT_)."""
+        return self.name.upper().startswith(("EXT_", "V_EXT_"))
 
     @property
     def primary_key(self) -> Key | None:
