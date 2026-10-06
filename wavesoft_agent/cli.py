@@ -10,6 +10,8 @@ Exemples ::
     python -m wavesoft_agent template FTC002                    # modèle Excel à remplir
     python -m wavesoft_agent build FTC002 modele_FTC002.xlsx    # fichier d'import contrôlé
     python -m wavesoft_agent check-file FTC002 import.txt       # contrôle d'un fichier existant
+    python -m wavesoft_agent automate FTC002 import.txt         # script SQL des tâches Automate, à relire
+    python -m wavesoft_agent automate-etat --erreurs            # état des tâches dans WSAUTOMATE (lecture)
 """
 
 from __future__ import annotations
@@ -24,15 +26,19 @@ from .catalog import Catalog
 from .export import KIND_LABELS, _object_md, to_excel, to_markdown
 
 
-def cmd_discover(args) -> int:
+def _connect(args):
     from .connection import ConnectionSettings, connect
+
+    return connect(ConnectionSettings.from_env(
+        env_file=args.env, server=args.server, database=args.database, user=args.user, driver=args.driver
+    ))
+
+
+def cmd_discover(args) -> int:
     from .discovery import discover
 
-    settings = ConnectionSettings.from_env(
-        env_file=args.env, server=args.server, database=args.database, user=args.user, driver=args.driver
-    )
     warnings: list[str] = []
-    with connect(settings) as conn:
+    with _connect(args) as conn:
         catalog = discover(conn, warnings)
     out = Path(args.out)
     catalog.save(out / "catalog.json")
@@ -158,6 +164,42 @@ def cmd_build(args) -> int:
     return code
 
 
+def cmd_automate(args) -> int:
+    from .automate import ENTITES, decouper, entite_pour, script_sql
+    from .importfile import check_file
+
+    spec = _spec(args)
+    entite = entite_pour(spec, args.entite)
+    sep = _sep(args.sep)
+    if _report(check_file(args.fichier, spec, sep)):
+        print("Aucun script écrit : corriger le fichier puis relancer.")
+        return 1
+    taches, sep = decouper(args.fichier, spec, sep)
+    if not taches:
+        raise ValueError(f"{args.fichier} ne contient aucun enregistrement")
+    out = Path(args.out or Path(args.fichier).with_suffix(".automate.sql").name)
+    sql = script_sql(taches, entite, sep, args.profil, args.tcp, Path(args.fichier).name)
+    out.write_bytes(sql.encode("utf-8-sig"))
+    print(f"Script écrit : {out.resolve()}")
+    print(f"{len(taches)} tâche(s) pour l'entité {entite} ({ENTITES[entite]}). "
+          "Rien n'a été envoyé : relire le script puis l'exécuter sur le dossier Wavesoft.")
+    return 0
+
+
+def cmd_automate_etat(args) -> int:
+    from .automate import ETATS, lire_etat
+
+    with _connect(args) as conn:
+        rows = lire_etat(conn, args.ids, args.erreurs)
+    for r in rows:
+        etat = ETATS.get(r["TRSETAT"], r["TRSETAT"])
+        objet = r["TRSCODEOBJET"] or r["TRSIDOBJET"] or ""
+        print(f"{r['TRSID']:>8}  entité {r['TRSENTITE']:<4} {etat:<10} {objet}  {r['TRSERREUR'] or ''}".rstrip())
+    if not rows:
+        print("Aucune tâche.")
+    return 1 if any(r["TRSETAT"] == "E" for r in rows) else 0
+
+
 def _sep(value):
     return {"tab": "\t", "tabulation": "\t", "pv": ";", ";": ";"}.get(value, value) if value else None
 
@@ -166,13 +208,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="wavesoft_agent", description="Agent intégrateur Wavesoft")
     sub = p.add_subparsers(dest="command", required=True)
 
+    def connection_args(parser):
+        parser.add_argument("--env", default=".env", help="fichier de paramètres de connexion (défaut : .env)")
+        parser.add_argument("--server")
+        parser.add_argument("--database")
+        parser.add_argument("--user", help="compte SQL (sinon authentification Windows)")
+        parser.add_argument("--driver")
+
     d = sub.add_parser("discover", help="lire tous les objets de la base et écrire le catalogue")
     d.add_argument("--out", default="sortie", help="dossier de sortie (défaut : sortie)")
-    d.add_argument("--env", default=".env", help="fichier de paramètres de connexion (défaut : .env)")
-    d.add_argument("--server")
-    d.add_argument("--database")
-    d.add_argument("--user", help="compte SQL (sinon authentification Windows)")
-    d.add_argument("--driver")
+    connection_args(d)
     d.set_defaults(func=cmd_discover)
 
     s = sub.add_parser("summary", help="résumé d'un catalogue")
@@ -217,6 +262,23 @@ def build_parser() -> argparse.ArgumentParser:
     bd.add_argument("--sep", help="séparateur : ; (défaut) ou tab")
     bd.add_argument("--specs", help=specs_help)
     bd.set_defaults(func=cmd_build)
+
+    au = sub.add_parser("automate", help="script SQL qui confie un fichier d'import à l'Automate (à relire, rien n'est envoyé)")
+    au.add_argument("format")
+    au.add_argument("fichier")
+    au.add_argument("--entite", type=int, help="TRSENTITE (déduit du format sinon, ex. 99 pour FTC002)")
+    au.add_argument("--profil", default="", help="code du profil d'I/E (inutile pour les pièces)")
+    au.add_argument("--tcp", action="store_true", help="réserver les tâches à un automate en mode serveur TCP")
+    au.add_argument("--out", help="script SQL (défaut : <fichier>.automate.sql)")
+    au.add_argument("--sep", help="séparateur : ; ou tab (détecté sinon)")
+    au.add_argument("--specs", help=specs_help)
+    au.set_defaults(func=cmd_automate)
+
+    ae = sub.add_parser("automate-etat", help="état des tâches de l'Automate (lecture seule)")
+    ae.add_argument("--ids", type=int, nargs="+", help="TRSID à suivre (défaut : tâches non terminées)")
+    ae.add_argument("--erreurs", action="store_true", help="seulement les tâches en erreur")
+    connection_args(ae)
+    ae.set_defaults(func=cmd_automate_etat)
     return p
 
 

@@ -33,7 +33,11 @@ prévus par Wavesoft.
             │   d'import (fait)  │  (séparateur ; ou tab, ANSI), prêt pour la
             └─────────┬──────────┘  Gestion ou l'Automate de transfert
             ┌─────────▼──────────┐
-            │ 5. Contrôles base  │  codes clients, articles, natures, dépôts…
+            │ 5. Automate        │  automate.py : script SQL ws_sp_add_tache_automate
+            │   (fait)           │  (une tâche par pièce), à relire et exécuter ;
+            └─────────┬──────────┘  suivi des tâches en lecture seule
+            ┌─────────▼──────────┐
+            │ 6. Contrôles base  │  codes clients, articles, natures, dépôts…
             │   (à venir)        │  vérifiés contre la base réelle
             └────────────────────┘
 ```
@@ -47,7 +51,8 @@ prévus par Wavesoft.
 | `formats.py` | définitions de formats d'import (types d'enregistrements, colonnes, règles) |
 | `importfile.py` | lecture, contrôle et écriture des fichiers d'import Wavesoft |
 | `excel_io.py` | modèle Excel à remplir et génération du fichier d'import depuis ce modèle |
-| `cli.py` | commandes `discover`, `summary`, `search`, `describe`, `formats`, `template`, `build`, `check-file` |
+| `automate.py` | tâches de l'Automate de transferts : script SQL à relire, lecture de l'état dans `WSAUTOMATE` |
+| `cli.py` | commandes `discover`, `summary`, `search`, `describe`, `formats`, `template`, `build`, `check-file`, `automate`, `automate-etat` |
 | `specs/` | où placer les définitions de formats (privées, hors dépôt) |
 
 Ce que la découverte relève pour chaque objet :
@@ -129,3 +134,24 @@ les lignes (un `LD` ou `AN` reprend l'`ORDRE` de la ligne article qu'il
 complète). `build` n'écrit aucun fichier tant qu'il reste une erreur ; chaque
 anomalie indique la feuille et la ligne Excel à corriger. Le fichier produit
 s'importe par la Gestion (Traitement des pièces) ou par l'Automate de transfert.
+
+## Confier le fichier à l'Automate de transferts
+
+L'agent n'écrit jamais dans la base. `automate` contrôle le fichier puis écrit
+un script SQL qui appelle la procédure éditeur `ws_sp_add_tache_automate`
+(FTC005), une tâche par pièce ou par commande isolée comme le demande le guide
+Automate. Le script s'exécute en une transaction (tout ou rien) et se termine
+par la liste des `TRSID` créés.
+
+```
+python -m wavesoft_agent automate FTC002 import_ventes.txt        # → import_ventes.automate.sql
+python -m wavesoft_agent automate-etat --ids 1817 1818            # suivi (lecture seule)
+python -m wavesoft_agent automate-etat --erreurs                  # tâches en erreur et leur message
+```
+
+L'entité (`TRSENTITE`) est déduite du format : 99 ventes, 199 achats, 299
+stock, 400 EDI, 24 et 28 pour les traitements de pièces ; `--entite` la force
+pour les autres imports, et `--profil` donne le profil d'I/E quand le format
+n'est pas fixe. Le script passe `@TRSISTCP = 'N'` car la valeur par défaut de la
+procédure (`'O'`) réserve la tâche à un automate en mode serveur TCP ; `--tcp`
+rétablit ce mode.
